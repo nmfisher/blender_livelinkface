@@ -1,3 +1,13 @@
+from collections import deque
+from statistics import mean
+from enum import Enum
+import struct
+from typing import Tuple
+import datetime
+import uuid
+import numpy as np
+from livelinkface.timecode import Timecode
+
 class FaceBlendShape(Enum):
     EyeBlinkLeft = 0
     EyeLookDownLeft = 1
@@ -187,7 +197,7 @@ class PyLiveLinkFace:
             self._blend_shapes[index.value] = filterd_value
 
     @staticmethod
-    def decode(bytes_data: bytes) -> Tuple[bool, PyLiveLinkFace]:
+    def decode(bytes_data: bytes):
         """ Decodes the given bytes (send from an PyLiveLinkFace App or from 
         this library) and creates a new PyLiveLinkFace object.
         Returns True and the generated object if a face was found in the data, 

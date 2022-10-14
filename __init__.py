@@ -13,6 +13,7 @@ from livelinkface.operators import LiveLinkFacePanel, ConnectOperator, LoadCSVOp
 classes = [ LiveLinkFacePanel, ConnectOperator, LoadCSVOperator ]
         
 def register():
+    bpy.types.Scene.ll_is_listening = bpy.props.BoolProperty(name="Server listening", description="Whether the server is currently listening", default=False)
     bpy.types.Scene.ll_host_ip = bpy.props.StringProperty(name="Host IP", description="IP address of the interface on this machine to listen", default="0.0.0.0")
     bpy.types.Scene.ll_host_port = bpy.props.IntProperty(name="Port", description="Port", default=11111)
     bpy.types.Scene.ll_target = bpy.props.PointerProperty(
