@@ -14,15 +14,34 @@ from bpy.types import (Operator,
 
 import livelinkface.bpylivelinkface as llf
 
+def checkPrereqs(context):
+    if len(context.scene.ll_targets) == 0:
+        self.report({"ERROR"}, "No target object selected")
+    elif context.scene.ll_host_ip is None or len(context.scene.ll_host_ip) == 0:
+        self.report({"ERROR"}, "No IP address set")
+    elif context.scene.ll_host_port is None:
+        self.report({"ERROR"}, "No port set")
+    else:
+        return True
+    return False
+
 class LoadCSVOperator(Operator, ImportHelper):
     bl_idname = "scene.load_csv_operator"
     bl_label = "Load from CSV"
         
+    filename_ext = ".csv"
     filter_glob: bpy.props.StringProperty(options={'HIDDEN'}, default='*.csv',maxlen=255)
 
     def execute(self, context):
-        bpy.ops.buttons.file_browse()
-        return {'FINISHED'}
+        if checkPrereqs(context):
+            #try:
+            llf.LiveLinkTarget.from_csv([t.obj for t in context.scene.ll_targets], self.filepath)
+            self.report({"INFO"}, "Loaded")
+            return {'FINISHED'}
+            #except Exception as e:
+            #    print(e)
+            #    self.report({"ERROR"}, f"Error loading from CSV : {self.filepath}")
+        return {'CANCELLED'}
         
 class ConnectOperator(bpy.types.Operator):
     bl_idname = "scene.connect_operator"
@@ -36,15 +55,9 @@ class ConnectOperator(bpy.types.Operator):
             self.report({"INFO"}, "Disconnected")
             return {'FINISHED'}
         else:
-            if context.scene.ll_target is None:
-                self.report({"ERROR"}, "No target object selected")
-            elif context.scene.ll_host_ip is None or len(context.scene.ll_host_ip) == 0:
-                self.report({"ERROR"}, "No IP address set")
-            elif context.scene.ll_host_port is None:
-                self.report({"ERROR"}, "No port set")
-            else:
+            if checkPrereqs(context):
                 try:
-                    llf.create_instance(context.scene.ll_target, context.scene.ll_host_ip, context.scene.ll_host_port)
+                    llf.create_instance([t.obj for t in context.scene.ll_targets], context.scene.ll_host_ip, context.scene.ll_host_port)
                     context.scene.ll_is_listening = True
                     self.report({"INFO"}, "Started")
                 except Exception as e:
@@ -70,7 +83,7 @@ class CUSTOM_OT_actions(Operator):
 
     def invoke(self, context, event):
         scn = context.scene
-        idx = scn.custom_index
+        idx = scn.ll_targets_index
 
         try:
             item = scn.ll_targets[idx]
@@ -93,18 +106,21 @@ class CUSTOM_OT_actions(Operator):
 
             elif self.action == 'REMOVE':
                 info = 'Item "%s" removed from list' % (scn.ll_targets[idx].name)
-                scn.ll_target_index -= 1
+                scn.ll_targets_index -= 1
                 scn.ll_targets.remove(idx)
                 self.report({'INFO'}, info)
                 
         if self.action == 'ADD':
             if context.object:
-                item = scn.ll_targets.add()
-                item.name = context.object.name
-                item.obj = context.object
-                scn.ll_target_index = len(scn.ll_targets)-1
-                info = '"%s" added to list' % (item.name)
-                self.report({'INFO'}, info)
+                if any(target.name == context.object.name for target in scn.ll_targets):
+                    self.report({'INFO'}, 'Item already exists in target list')
+                else:
+                    item = scn.ll_targets.add()
+                    item.name = context.object.name
+                    item.obj = context.object
+                    scn.ll_targets_index = len(scn.ll_targets)-1
+                    info = '"%s" added to list' % (item.name)
+                    self.report({'INFO'}, info)
             else:
                 self.report({'INFO'}, "Nothing selected in the Viewport")
         return {"FINISHED"}
@@ -152,7 +168,7 @@ class CUSTOM_OT_printItems(Operator):
     def execute(self, context):
         scn = context.scene
         if self.reverse_order:
-            for i in range(scn.ll_target_index, -1, -1):        
+            for i in range(scn.ll_targets_index, -1, -1):        
                 ob = scn.ll_targets[i].obj
                 print ("Object:", ob,"-",ob.name, ob.type)
         else:
@@ -215,7 +231,7 @@ class CUSTOM_OT_removeDuplicates(Operator):
             scn.ll_targets.remove(i)
             removed_items.append(i)
         if removed_items:
-            scn.ll_target_index = len(scn.ll_targets)-1
+            scn.ll_targets_index = len(scn.ll_targets)-1
             info = ', '.join(map(str, removed_items))
             self.report({'INFO'}, "Removed indices: %s" % (info))
         else:
@@ -244,7 +260,7 @@ class CUSTOM_OT_selectItems(Operator):
     
     def execute(self, context):
         scn = context.scene
-        idx = scn.ll_target_index
+        idx = scn.ll_targets_index
         
         try:
             item = scn.ll_targets[idx]
@@ -304,7 +320,7 @@ class CUSTOM_OT_deleteObject(Operator):
     def execute(self, context):
         scn = context.scene
         selected_objs = context.selected_objects
-        idx = scn.ll_target_index
+        idx = scn.ll_targets_index
         try:
             item = scn.ll_targets[idx]
         except IndexError:
@@ -320,7 +336,7 @@ class CUSTOM_OT_deleteObject(Operator):
                 bpy.ops.object.delete()
                 
             info = ' Item "%s" removed from Scene' % (len(selected_objs))
-            scn.ll_target_index -= 1
+            scn.ll_targets_index -= 1
             scn.ll_targets.remove(idx)
             self.report({'INFO'}, info)
         return{'FINISHED'}
@@ -331,9 +347,7 @@ class CUSTOM_UL_items(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         obj = item.obj
         custom_icon = "OUTLINER_OB_%s" % obj.type
-        split = layout.split(factor=0.3)
-        split.label(text="Index: %d" % (index))
-        split.prop(obj, "name", text="", emboss=False, translate=False, icon=custom_icon)
+        layout.prop(obj, "name", text="", emboss=False, translate=False, icon=custom_icon)
             
     def invoke(self, context, event):
         pass   
@@ -356,14 +370,7 @@ class LiveLinkFacePanel(bpy.types.Panel):
         col = row.column(align=True)
         col.operator("custom.list_action", icon='ADD', text="").action = 'ADD'
         col.operator("custom.list_action", icon='REMOVE', text="").action = 'REMOVE'
-        col.separator()
-        col.operator("custom.list_action", icon='TRIA_UP', text="").action = 'UP'
-        col.operator("custom.list_action", icon='TRIA_DOWN', text="").action = 'DOWN'     
-        
-        #row = self.layout.row(align=True)
-        #col = row.col()
-        #col.operator("custom.clear_list", icon="X")
-        #col.operator("custom.remove_duplicates", icon="GHOST_ENABLED")
+
         
         box = self.layout.box()
         box.label(text="Stream")

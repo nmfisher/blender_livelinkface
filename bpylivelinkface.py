@@ -2,6 +2,7 @@ import time
 import socket 
 import bpy 
 import csv
+import random 
 
 from livelinkface.pylivelinkface import PyLiveLinkFace, FaceBlendShape
 
@@ -24,7 +25,7 @@ class LiveLinkTarget:
                 
         # this is where the values for the shape keys/bones at every frame
         # if you are streaming, you only need to pass num_frames=0 and the first frame will be used each time
-        self.sk_frames = [[0] * len(self.target.data.shape_keys.key_blocks)]*num_frames
+        self.sk_frames = [ [0] * len(self.target.data.shape_keys.key_blocks) for _ in range(num_frames) ]
         
         self.bone_props = [] 
         
@@ -33,8 +34,7 @@ class LiveLinkTarget:
             bone_prop = self.livelink_to_bone_prop(i)
             if bone_prop is not None:
                 self.bone_props += [bone_prop]
-#        print(f"{len(self.bone_props)} bone props") 
-        self.bone_frames = [[0] * len(self.bone_props)]*num_frames
+        self.bone_frames = [[0] * len(self.bone_props) for _ in range(num_frames)]
                 
         if action_name is not None:
             self.create_action(action_name)
@@ -59,7 +59,7 @@ class LiveLinkTarget:
         return None    
             
     '''Sets the value for the LiveLink blendshape at index [i_ll] to [val] for frame [frame] (note the underlying target may be a blendshape or a bone).'''
-    def set_frame_value(self, i_ll, val, frame=0):
+    def set_frame_value(self, i_ll, frame, val):
         i_sk = self.livelink_to_shapekey_idx(i_ll)
         
         if i_sk != -1:
@@ -70,31 +70,36 @@ class LiveLinkTarget:
                 bone_idx =self.bone_props.index(bone_prop)
                 self.bone_frames[frame][bone_idx] = val
             else:
-#                print(f"Failed to set bone prop for {i_ll}")
+                #print(f"Failed to set bone prop for {i_ll}")
                 pass
 
     '''Loads a CSV in LiveLinkFace format. First line is the header (Timecode,BlendshapeCount,etc,etc), every line thereafter is a single frame with comma-separated weights'''
     @staticmethod
-    def from_csv(target,path,action_name,use_first_frame_as_zero=False):        
+    def from_csv(targets,path,action_name="LiveLinkAction",use_first_frame_as_zero=False):        
         csvdata = [x for x in csv.reader(open(path,"r"))]
         num_frames = len(csvdata) - 1
         
-        target = LiveLinkTarget(target, num_frames, action_name=action_name)
+        targets = [LiveLinkTarget(target, num_frames, action_name=action_name) for target in targets]
 
         for idx,blendshape in enumerate(LIVE_LINK_FACE_HEADER):
             if idx < 2:
                 continue
             
             rest_weight = float(csvdata[1][idx])
-            
+                        
             for i in range(1, num_frames):
                 val = float(csvdata[i][idx])
                 if use_first_frame_as_zero:
                     val -= rest_weight
-                target.set_frame_value(idx-2, val,frame=i-1)
+                for target in targets:
+                    ll_idx = idx - 2
+                    frame=i-1
+                    target.set_frame_value(ll_idx, frame, val)
+
+        for target in targets:
+            target.update_animation()
         
-        target.update_animation()
-        return target
+        return targets
     
     def update_animation(self):
         # a bit slow to use bpy.context.object.data.shape_keys.keyframe_insert(datapath,frame=frame)
@@ -109,13 +114,21 @@ class LiveLinkTarget:
         for i_b,fc, in enumerate(self.bone_fcurves):
             frame_values = [self.bone_frames[i][i_b] for i in frame_nums]
             frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
+            print(frame_data[:200])
             fc.keyframe_points.foreach_set('co',frame_data)
        
     def create_action(self, action_name):
     
         # create a new Action so we can directly create fcurves and set the keyframe points
-        self.sk_action = bpy.data.actions.new(f"{action_name}_sk") 
-        self.bone_action = bpy.data.actions.new(f"{action_name}_bone") 
+        try:
+            self.sk_action = bpy.data.actions[f"{action_name}_sk"]
+        except: 
+            self.sk_action = bpy.data.actions.new(f"{action_name}_sk") 
+            
+        try:
+            self.bone_action = bpy.data.actions[f"{action_name}_bone"]
+        except: 
+            self.bone_action = bpy.data.actions.new(f"{action_name}_bone") 
     
         # create the bone AnimData if it doesn't exist 
         if self.target.animation_data is None:
@@ -134,13 +147,19 @@ class LiveLinkTarget:
         
         for sk in self.target.data.shape_keys.key_blocks:
             datapath = f"{sk.path_from_id()}.value"
-            fc = self.sk_action.fcurves.new(datapath)
-            fc.keyframe_points.add(count=len(self.sk_frames))
+            
+            fc = self.sk_action.fcurves.find(datapath)
+            if fc is None:
+                fc = self.sk_action.fcurves.new(datapath)                
+                fc.keyframe_points.add(count=len(self.sk_frames))
             self.sk_fcurves += [fc]
 
         for bone_prop in self.bone_props:
-            fc = self.bone_action.fcurves.new("{bone_prop}_fcurve")
-            fc.keyframe_points.add(count=len(self.sk_frames))
+            datapath = f"[\"{bone_prop}\"]"
+            fc = self.bone_action.fcurves.find(datapath)
+            if fc is None:
+                fc = self.bone_action.fcurves.new(datapath)
+                fc.keyframe_points.add(count=len(self.sk_frames))
             self.bone_fcurves += [fc]
     
        
