@@ -2,6 +2,9 @@
 
 Stream/import ARKit blendshapes via the iPhone LiveLinkFace app direct to Blender.
 
+[Support development by purchasing via Gumroad](https://nickfisher.gumroad.com/l/tvzndw)
+
+
 ## CSV Import
 
 [![Alt text](https://img.youtube.com/vi/Jexx_N8mRsI/0.jpg)](https://youtu.be/Jexx_N8mRsI)
