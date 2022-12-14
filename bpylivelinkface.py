@@ -10,36 +10,59 @@ LIVE_LINK_FACE_HEADER = "Timecode,BlendShapeCount,EyeBlinkLeft,EyeLookDownLeft,E
 
 instance = None
 
-''' Create an instance of an BlenderLiveLinkFaceAnimator that will listen on the given IP/port. Prefer using this method than constructing an instance directly as this will ensure that any pre-existing connections are closed'''
+'''
+Create a listener (an instance of LiveLinkFaceServer) on the given IP/port. 
+Prefer using this method than constructing an instance directly as this will ensure that any pre-existing connections are closed
+'''
 def create_instance(targets, host= "0.0.0.0", port = 11111):
     global instance
     if instance is not None:
         instance.close()
     instance = LiveLinkFaceServer(targets, host, port)
-    
+
+'''
+Interface for looking up shape key/custom properties by name and setting their respective weights on frames.
+'''
 class LiveLinkTarget:
 
-    def __init__(self, target, num_frames, action_name=None):
+    '''
+    Construct an instance to manipulate frames on a single target object (which is an object within the Blender context).
+    If the number of frames is known ahead of time (i.e. you are not working with streaming), this can be passed here.
+    If you are streaming, pass num_frames=0 (or simply don't pass anything for the parameter and leave empty).
+    The target should have at least one shape key or custom property with a name that corresponds to one of the entries in LIVE_LINK_FACE_HEADER.
+    An exception will be raised if neither of these are present.
+    '''
+    def __init__(self, target, num_frames=0, action_name=None):
         
         self.target = target
                 
-        # this is where the values for the shape keys/bones at every frame
-        # if you are streaming, you only need to pass num_frames=0 and the first frame will be used each time
-        self.sk_frames = [ [0] * len(self.target.data.shape_keys.key_blocks) for _ in range(num_frames) ]
+        # create list to hold shape key framedata, where each frame contains the weights for every single shape key in the target
+        # I can't find a better way to check if an object has shapekeys, so just use try-except
+        try:
+            self.sk_frames = [ [0] * len(self.target.data.shape_keys.key_blocks) for _ in range(num_frames) ] 
+        except:
+            self.sk_frames = None
+        print(f"Created {len(self.sk_frames)} frames for {len(self.target.data.shape_keys.key_blocks)} shape keys")
+        self.custom_props = [] 
         
-        self.bone_props = [] 
-        
-        # iterate over LIVE_LINK_HEADER and extract any ARKit blendshape names that are driven by bones in the target object
+        # for ARkit blendshapes that will drive bone rotations, we expect a custom property on the target object whose name matches the name of the incoming ARkit shape
+        # it is then your responsibility to create a driver in Blender to rotate the bone between its extremities (blendshape values -1 to 1 )
         for i in range(len(LIVE_LINK_FACE_HEADER) - 2):
-            bone_prop = self.livelink_to_bone_prop(i)
-            if bone_prop is not None:
-                self.bone_props += [bone_prop]
-        self.bone_frames = [[0] * len(self.bone_props) for _ in range(num_frames)]
+            custom_prop = self.livelink_to_custom_prop(i)
+            if custom_prop is not None:
+                self.custom_props += [custom_prop]
+                print(f"Found custom property {custom_prop} for ARkit blendshape : {LIVE_LINK_FACE_HEADER[i+2]}")
+        print(f"Set custom_props to {self.custom_props}")
+        self.custom_prop_frames = [[0] * len(self.custom_props) for _ in range(num_frames)]
                 
+        print(f"Created {len(self.custom_prop_frames)} frames for {len(self.custom_props)} custom properties")
         if action_name is not None:
             self.create_action(action_name)
             
-            
+    '''
+    Try and resolve an ARKit blendshape-id to a named shape key in the target object.
+    ARKit blendshape IDs are the integer index within LIVE_LINK_FACE_HEADER (offset to exclude the first two columns.
+    '''
     def livelink_to_shapekey_idx(self, ll_idx):
         name = LIVE_LINK_FACE_HEADER[ll_idx+2]
         for n in [name, name[0].lower() + name[1:]]:
@@ -48,11 +71,16 @@ class LiveLinkTarget:
                 return idx
         return idx
 
-    def livelink_to_bone_prop(self, ll_idx):
+    '''
+    Try and resolve an ARKit blendshape-id to a custom property in the target object.
+    ARKit blendshape IDs are the integer index within LIVE_LINK_FACE_HEADER (offset to exclude the first two columns.
+    '''
+
+    def livelink_to_custom_prop(self, ll_idx):
         name = LIVE_LINK_FACE_HEADER[ll_idx+2]
         for n in [name, name[0].lower() + name[1:]]:
             try:
-                self.target[n]
+                self.target.data[n]
                 return n
             except:
                 pass
@@ -65,12 +93,14 @@ class LiveLinkTarget:
         if i_sk != -1:
             self.sk_frames[frame][i_sk] = val
         else:
-            bone_prop = self.livelink_to_bone_prop(i_ll)
-            if bone_prop is not None:
-                bone_idx =self.bone_props.index(bone_prop)
-                self.bone_frames[frame][bone_idx] = val
+            custom_prop = self.livelink_to_custom_prop(i_ll)
+            if custom_prop is not None:
+                custom_prop_idx =self.custom_props.index(custom_prop)
+                self.custom_prop_frames[frame][custom_prop_idx] = val
+                if frame == 0:
+                    print(f"Set custom_prop {custom_prop} to {val}")
             else:
-                #print(f"Failed to set bone prop for {i_ll}")
+#                print(f"Failed to find custom property for ARkit blendshape id {i_ll}")
                 pass
 
     '''Loads a CSV in LiveLinkFace format. First line is the header (Timecode,BlendshapeCount,etc,etc), every line thereafter is a single frame with comma-separated weights'''
@@ -80,7 +110,6 @@ class LiveLinkTarget:
         num_frames = len(csvdata) - 1
         
         targets = [LiveLinkTarget(target, num_frames, action_name=action_name) for target in targets]
-
         for idx,blendshape in enumerate(LIVE_LINK_FACE_HEADER):
             if idx < 2:
                 continue
@@ -111,10 +140,10 @@ class LiveLinkTarget:
             frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
             fc.keyframe_points.foreach_set('co',frame_data)
             
-        for i_b,fc, in enumerate(self.bone_fcurves):
-            frame_values = [self.bone_frames[i][i_b] for i in frame_nums]
+        for i_b,fc, in enumerate(self.custom_prop_fcurves):
+            frame_values = [self.custom_prop_frames[i][i_b] for i in frame_nums]
             frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
-            print(frame_data[:200])
+            print(frame_data[0])
             fc.keyframe_points.foreach_set('co',frame_data)
        
     def create_action(self, action_name):
@@ -126,15 +155,15 @@ class LiveLinkTarget:
             self.sk_action = bpy.data.actions.new(f"{action_name}_sk") 
             
         try:
-            self.bone_action = bpy.data.actions[f"{action_name}_bone"]
+            self.custom_prop_action = bpy.data.actions[f"{action_name}_bone"]
         except: 
-            self.bone_action = bpy.data.actions.new(f"{action_name}_bone") 
+            self.custom_prop_action = bpy.data.actions.new(f"{action_name}_bone") 
     
         # create the bone AnimData if it doesn't exist 
-        if self.target.animation_data is None:
-            self.target.animation_data_create()
+        if self.target.data.animation_data is None:
+            self.target.data.animation_data_create()
             
-        self.target.animation_data.action = self.bone_action
+        self.target.data.animation_data.action = self.custom_prop_action
             
         # create the shape key AnimData if it doesn't exist 
         if self.target.data.shape_keys.animation_data is None:
@@ -143,30 +172,40 @@ class LiveLinkTarget:
         self.target.data.shape_keys.animation_data.action = self.sk_action
         
         self.sk_fcurves = []
-        self.bone_fcurves = []
+        self.custom_prop_fcurves = []
         
         for sk in self.target.data.shape_keys.key_blocks:
             datapath = f"{sk.path_from_id()}.value"
             
             fc = self.sk_action.fcurves.find(datapath)
             if fc is None:
+                print(f"Creating fcurve for shape key {sk.path_from_id()}")
                 fc = self.sk_action.fcurves.new(datapath)                
                 fc.keyframe_points.add(count=len(self.sk_frames))
+            else:
+                print(f"Found fcurve for shape key {sk.path_from_id()}")
             self.sk_fcurves += [fc]
 
-        for bone_prop in self.bone_props:
-            datapath = f"[\"{bone_prop}\"]"
-            fc = self.bone_action.fcurves.find(datapath)
+        for custom_prop in self.custom_props:
+            datapath = f"[\"{custom_prop}\"]"
+            fc = self.custom_prop_action.fcurves.find(datapath)
             if fc is None:
-                fc = self.bone_action.fcurves.new(datapath)
+                print(f"Creating fcurve for custom prop {custom_prop}")
+                self.target.data.keyframe_insert(datapath)
+                fc = self.custom_prop_action.fcurves.find(datapath)
+                fc.keyframe_points.clear()
                 fc.keyframe_points.add(count=len(self.sk_frames))
-            self.bone_fcurves += [fc]
+            else:
+                print(f"Found existing fcurve for custom prop {custom_prop}")
+
+            self.custom_prop_fcurves += [fc]
+
     
        
     def update_to_frame(self, frame=0):
         self.target.data.shape_keys.key_blocks.foreach_set("value", self.sk_frames[frame])        
-        for i,bone_prop in enumerate(self.bone_props):
-            self.target[bone_prop] = self.bone_frames[frame][i]
+        for i,custom_prop in enumerate(self.custom_props):
+            self.target[custom_prop] = self.custom_prop_frames[frame][i]
         self.target.data.shape_keys.user.update()
 
 class LiveLinkFaceServer:
