@@ -48,9 +48,12 @@ class ConnectOperator(bpy.types.Operator):
     bl_label = "connectbutton"
 
     def execute(self, context):
-        if context.scene.ll_is_listening:
-            llf.instance.close()
-            llf.instance = None
+        if llf.instance is not None and context.scene.ll_is_listening:
+            try:
+                llf.instance.close()
+                llf.instance = None
+            except:
+                pass
             context.scene.ll_is_listening = False
             self.report({"INFO"}, "Disconnected")
             return {'FINISHED'}
@@ -377,8 +380,8 @@ class LiveLinkFacePanel(bpy.types.Panel):
         row = box.row()
         row.prop(context.scene, "ll_host_ip") 
         row.prop(context.scene, "ll_host_port")
-        #box.prop(context.scene, "ll_targets", text = "Target")
-        box.operator("scene.connect_operator", text="Disconnect" if context.scene.ll_is_listening else "Connect")
+
+        box.operator("scene.connect_operator", text="Disconnect" if llf.instance is not None and context.scene.ll_is_listening else "Connect")
         box = self.layout.box()
         load_csv = box.operator("scene.load_csv_operator")
         

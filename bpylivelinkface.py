@@ -206,7 +206,7 @@ class LiveLinkFaceServer:
                 for t in self.targets:
                     for i in range(len(FaceBlendShape)):
                         val = live_link_face.get_blendshape(FaceBlendShape(i))
-                        t.set_frame_value(i, val, frame=0)
+                        t.set_frame_value(i, 0, val)
                     t.update_to_frame(0)
 
         except Exception as e:
