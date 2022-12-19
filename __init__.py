@@ -51,7 +51,7 @@ def unregister():
     for c in classes:
         bpy.utils.unregister_class(c)
     del bpy.types.Scene.ll_targets
-    del bpy.types.Scene.ll_target_index
+    del bpy.types.Scene.ll_targets_index
         
 if __name__ == "main":
     register()        
