@@ -123,7 +123,7 @@ class LiveLinkTarget:
                 for target in targets:
                     ll_idx = idx - 2
                     frame=i-1
-                    target.set_frame_value(ll_idx, frame, val)
+                    target.set_frame_value(ll_idx, 0, val)
 
         for target in targets:
             target.update_animation()
@@ -143,7 +143,6 @@ class LiveLinkTarget:
         for i_b,fc, in enumerate(self.custom_prop_fcurves):
             frame_values = [self.custom_prop_frames[i][i_b] for i in frame_nums]
             frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
-            print(frame_data[0])
             fc.keyframe_points.foreach_set('co',frame_data)
        
     def create_action(self, action_name):
@@ -245,7 +244,7 @@ class LiveLinkFaceServer:
                 for t in self.targets:
                     for i in range(len(FaceBlendShape)):
                         val = live_link_face.get_blendshape(FaceBlendShape(i))
-                        t.set_frame_value(i, val, frame=0)
+                        t.set_frame_value(i, 0, val)
                     t.update_to_frame(0)
 
         except Exception as e:

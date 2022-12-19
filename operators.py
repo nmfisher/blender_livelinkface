@@ -49,7 +49,8 @@ class ConnectOperator(bpy.types.Operator):
 
     def execute(self, context):
         if context.scene.ll_is_listening:
-            llf.instance.close()
+            if llf.instance is not None:
+                llf.instance.close()
             llf.instance = None
             context.scene.ll_is_listening = False
             self.report({"INFO"}, "Disconnected")
