@@ -123,7 +123,7 @@ class LiveLinkTarget:
                 for target in targets:
                     ll_idx = idx - 2
                     frame=i-1
-                    target.set_frame_value(ll_idx, 0, val)
+                    target.set_frame_value(ll_idx, i, val)
 
         for target in targets:
             target.update_animation()
