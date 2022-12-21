@@ -52,12 +52,14 @@ class LiveLinkTarget:
             if custom_prop is not None:
                 self.custom_props += [custom_prop]
                 print(f"Found custom property {custom_prop} for ARkit blendshape : {LIVE_LINK_FACE_HEADER[i+2]}")
+            else:
+                print(f"Could not find custom property {custom_prop} on target for ARkit blendshape : {LIVE_LINK_FACE_HEADER[i+2]}")
         print(f"Set custom_props to {self.custom_props}")
         self.custom_prop_frames = [[0] * len(self.custom_props) for _ in range(num_frames)]
                 
         print(f"Created {len(self.custom_prop_frames)} frames for {len(self.custom_props)} custom properties")
         if action_name is not None:
-            self.create_action(action_name)
+            self.create_action(action_name, num_frames)
             
     '''
     Try and resolve an ARKit blendshape-id to a named shape key in the target object.
@@ -80,7 +82,7 @@ class LiveLinkTarget:
         name = LIVE_LINK_FACE_HEADER[ll_idx+2]
         for n in [name, name[0].lower() + name[1:]]:
             try:
-                self.target.data[n]
+                self.target[n]
                 return n
             except:
                 pass
@@ -145,25 +147,19 @@ class LiveLinkTarget:
             frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
             fc.keyframe_points.foreach_set('co',frame_data)
        
-    def create_action(self, action_name):
+    def create_action(self, action_name, num_frames):
     
         # create a new Action so we can directly create fcurves and set the keyframe points
         try:
-            self.sk_action = bpy.data.actions[f"{action_name}_sk"]
+            self.sk_action = bpy.data.actions[f"{action_name}_shapekey"]
         except: 
-            self.sk_action = bpy.data.actions.new(f"{action_name}_sk") 
-            
-        try:
-            self.custom_prop_action = bpy.data.actions[f"{action_name}_bone"]
-        except: 
-            self.custom_prop_action = bpy.data.actions.new(f"{action_name}_bone") 
-    
+            self.sk_action = bpy.data.actions.new(f"{action_name}_shapekey") 
+                
         # create the bone AnimData if it doesn't exist 
-        if self.target.data.animation_data is None:
-            self.target.data.animation_data_create()
-            
-        self.target.data.animation_data.action = self.custom_prop_action
-            
+        # important - we create this on the target (e.g. bpy.context.object), not its data (bpy.context.object.data)
+        if self.target.animation_data is None:
+            self.target.animation_data_create()
+                                   
         # create the shape key AnimData if it doesn't exist 
         if self.target.data.shape_keys.animation_data is None:
             self.target.data.shape_keys.animation_data_create()
@@ -180,25 +176,16 @@ class LiveLinkTarget:
             if fc is None:
                 print(f"Creating fcurve for shape key {sk.path_from_id()}")
                 fc = self.sk_action.fcurves.new(datapath)                
-                fc.keyframe_points.add(count=len(self.sk_frames))
+                fc.keyframe_points.add(count=num_frames)
             else:
                 print(f"Found fcurve for shape key {sk.path_from_id()}")
             self.sk_fcurves += [fc]
 
         for custom_prop in self.custom_props:
             datapath = f"[\"{custom_prop}\"]"
-            fc = self.custom_prop_action.fcurves.find(datapath)
-            if fc is None:
-                print(f"Creating fcurve for custom prop {custom_prop}")
-                self.target.data.keyframe_insert(datapath)
-                fc = self.custom_prop_action.fcurves.find(datapath)
-                fc.keyframe_points.clear()
-                fc.keyframe_points.add(count=len(self.sk_frames))
-            else:
-                print(f"Found existing fcurve for custom prop {custom_prop}")
-
-            self.custom_prop_fcurves += [fc]
-
+            for i in range(num_frames):
+                self.target.keyframe_insert(datapath,frame=i)
+            self.custom_prop_fcurves += [fc for fc in self.target.animation_data.action.fcurves if fc.data_path == datapath]
     
        
     def update_to_frame(self, frame=0):
