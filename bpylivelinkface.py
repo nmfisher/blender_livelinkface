@@ -80,7 +80,7 @@ class LiveLinkTarget:
         name = LIVE_LINK_FACE_HEADER[ll_idx+2]
         for n in [name, name[0].lower() + name[1:]]:
             try:
-                self.target.data[n]
+                self.target[n]
                 return n
             except:
                 pass
