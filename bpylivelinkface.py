@@ -36,24 +36,32 @@ class LiveLinkTarget:
         
         self.target = target
                 
-        # create list to hold shape key framedata, where each frame contains the weights for every single shape key in the target
+        # first, let's create a placeholder for all shape keys that exist on the target mesh
+        # sk_frames is a list where each entry (itself a list) represents one frame
+        # each frame will contain N values (where N is the number of shape keys in the target mesh)
+        # (note this will also create keyframes for non-LiveLinkFace shape keys on the mesh)
         # I can't find a better way to check if an object has shapekeys, so just use try-except
         try:
             self.sk_frames = [ [0] * len(self.target.data.shape_keys.key_blocks) for _ in range(num_frames) ] 
         except:
             self.sk_frames = None
-        print(f"Created {len(self.sk_frames)} frames for {len(self.target.data.shape_keys.key_blocks)} shape keys")
-        self.custom_props = [] 
-        
-        # for ARkit blendshapes that will drive bone rotations, we expect a custom property on the target object whose name matches the name of the incoming ARkit shape
+        # some ARKit blendshapes may drive bone rotations, rather than mesh-deforming shape keys
+        # if a custom property exists on the target object whose name matches the incoming ARkit shape, the property will be animated
         # it is then your responsibility to create a driver in Blender to rotate the bone between its extremities (blendshape values -1 to 1 )
+
+        self.custom_props = [] 
         for i in range(len(LIVE_LINK_FACE_HEADER) - 2):
             custom_prop = self.livelink_to_custom_prop(i)
             if custom_prop is not None:
                 self.custom_props += [custom_prop]
                 print(f"Found custom property {custom_prop} for ARkit blendshape : {LIVE_LINK_FACE_HEADER[i+2]}")
-            else:
-                print(f"Could not find custom property {custom_prop} on target for ARkit blendshape : {LIVE_LINK_FACE_HEADER[i+2]}")
+                
+        for k in ["HeadPitch","HeadRoll","HeadYaw"]:
+            if k not in self.custom_props:
+                self.target[k] = 0.0
+                print(f"Created custom property {k} on target object")
+                self.custom_props += [ k ] 
+                
         print(f"Set custom_props to {self.custom_props}")
         self.custom_prop_frames = [[0] * len(self.custom_props) for _ in range(num_frames)]
                 
@@ -108,9 +116,11 @@ class LiveLinkTarget:
     '''Loads a CSV in LiveLinkFace format. First line is the header (Timecode,BlendshapeCount,etc,etc), every line thereafter is a single frame with comma-separated weights'''
     @staticmethod
     def from_csv(targets,path,action_name="LiveLinkAction",use_first_frame_as_zero=False):        
-        csvdata = [x for x in csv.reader(open(path,"r"))]
+        with open(path,"r") as csv_file:
+            csvdata = list(csv.reader(csv_file))
+
         num_frames = len(csvdata) - 1
-        
+
         targets = [LiveLinkTarget(target, num_frames, action_name=action_name) for target in targets]
         for idx,blendshape in enumerate(LIVE_LINK_FACE_HEADER):
             if idx < 2:
@@ -128,15 +138,17 @@ class LiveLinkTarget:
                     target.set_frame_value(ll_idx, i, val)
 
         for target in targets:
-            target.update_animation()
+            target.update_keyframes()
         
         return targets
     
-    def update_animation(self):
+    # this method actually sets the keyframe values via bpy
+    def update_keyframes(self):
         # a bit slow to use bpy.context.object.data.shape_keys.keyframe_insert(datapath,frame=frame)
         # (where datapath is 'key_blocks["MouthOpen"].value') 
         # better to add a new fcurve for each shape key then set the points in one go        
         frame_nums = list(range(len(self.sk_frames)))
+
         for i_sk,fc in enumerate(self.sk_fcurves):
             frame_values = [self.sk_frames[i][i_sk] for i in frame_nums]
             frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
