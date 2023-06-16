@@ -4,6 +4,9 @@ Stream/import ARKit blendshapes via the iPhone LiveLinkFace app direct to Blende
 
 [Support development by purchasing via Gumroad](https://nickfisher.gumroad.com/l/tvzndw)
 
+## Notes
+
+HeadPitch/HeadYaw are inverted when using LLF in landscape orientation
 
 ## CSV Import
 
