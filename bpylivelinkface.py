@@ -107,8 +107,6 @@ class LiveLinkTarget:
             if custom_prop is not None:
                 custom_prop_idx =self.custom_props.index(custom_prop)
                 self.custom_prop_frames[frame][custom_prop_idx] = val
-                if frame == 0:
-                    print(f"Set custom_prop {custom_prop} to {val}")
             else:
 #                print(f"Failed to find custom property for ARkit blendshape id {i_ll}")
                 pass
@@ -209,14 +207,15 @@ class LiveLinkTarget:
 class LiveLinkFaceServer:
 
     def __init__(self, targets, host, udp_port):
+        self.listening = False
         self.host = host
         self.port = udp_port
         self.millis = int(round(time.time() * 1000))
         self.targets = [ LiveLinkTarget(x,num_frames=1) for x in targets ]
         
-        bpy.app.timers.register(self.handle_data)
+        bpy.app.timers.register(self.read_from_socket)
         self.create_socket()
-        print(f"Animator listening on {self.host}:{self.port}")
+        print(f"Ready to receive network stream on {self.host}:{self.port}")
 
     def create_socket(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -224,7 +223,10 @@ class LiveLinkFaceServer:
         self.sock.setblocking(False)
         self.sock.bind((self.host, self.port)) 
                                                 
-    def handle_data(self):
+    def read_from_socket(self):
+    
+        if not self.listening:
+            return
         interval = 1/60
         data = None
         try:
@@ -233,11 +235,14 @@ class LiveLinkFaceServer:
             
             while True:
                 try:
-                    data, addr = self.sock.recvfrom(309) 
+                    data, addr = self.sock.recvfrom(1024) 
                 except socket.error as e:
+                    print(f"Socket error : {e}")
                     break
             if data is None:
+                print(f"Empty data, ignoring")
                 return interval
+            print(f"Got non-empty data of len {len(data)}")
             success, live_link_face = PyLiveLinkFace.decode(data)
             if success:
                 for t in self.targets:

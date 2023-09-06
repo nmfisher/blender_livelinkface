@@ -82,7 +82,6 @@ class PyLiveLinkFace:
     def __init__(self, name: str = "Python_LiveLinkFace", 
                         uuid: str = str(uuid.uuid1()), fps=60, 
                         filter_size: int = 5) -> None:
-
         # properties
         self.uuid = uuid
         self.name = name
@@ -216,25 +215,35 @@ class PyLiveLinkFace:
             The PyLiveLinkFace object.
 
         """
-        version = struct.unpack('<i', bytes_data[0:4])[0]
-        uuid = bytes_data[4:41].decode("utf-8")
-        name_length = struct.unpack('!i', bytes_data[41:45])[0]
-        name_end_pos = 45 + name_length
-        name = bytes_data[45:name_end_pos].decode("utf-8")
-        if len(bytes_data) > name_end_pos + 16:
+        version = struct.unpack('b', bytes_data[0:1])[0]
+        device_id_len = struct.unpack('!i', bytes_data[1:5])[0]
+        device_id = bytes_data[5:5+device_id_len].decode("utf-8")
+        name_length = struct.unpack('!i', bytes_data[5+device_id_len:5+device_id_len+4])[0]
+        name_start_pos = 5 + device_id_len + 4
+        name_end_pos = name_start_pos + name_length
+        name = bytes_data[name_start_pos:name_end_pos].decode("utf-8")
+                
+        frame_number, sub_frame = struct.unpack(
+                "!2i", bytes_data[name_end_pos:name_end_pos + 8])
+        fps, denominator = struct.unpack("!2i", bytes_data[name_end_pos+8:name_end_pos+16])
+        if frame_number % 60 == 0:
+            print(f"data length {len(bytes_data)} device_id {device_id} name {name} frame_number {frame_number} fps{fps}")
+
+        if len(bytes_data) > name_end_pos + 16:        
+           
+            bs_count = struct.unpack("b", bytes_data[name_end_pos+16:name_end_pos+17])[0]
 
             #FFrameTime, FFrameRate and data length
-            frame_number, sub_frame, fps, denominator, data_length = struct.unpack(
-                "!if2ib", bytes_data[name_end_pos:name_end_pos + 17])
-
-            if data_length != 61:
+            # BLEND_SHAPE_PACKET_VER (uint8), DeviceId (FName - ?), SubjectName (FName - ?), (FFrameRate (int32 + int32) + FFrameTime (int32)), uint8 BlendShapeCount, 
+            if bs_count != 61:
                 raise ValueError(
-                    f'Blend shape length is {data_length} but should be 61, something is wrong with the data.')
+                    f'Blend shape length is {bs_count} but should be 61, something is wrong with the data.')
 
             data = struct.unpack(
                 "!61f", bytes_data[name_end_pos + 17:])
-
-            live_link_face = PyLiveLinkFace(name, uuid, fps)
+            if frame_number % 60 == 0:
+                print(data)
+            live_link_face = PyLiveLinkFace(name, device_id, fps)
             live_link_face._version = version
             live_link_face._frames = frame_number
             live_link_face._sub_frame = sub_frame
@@ -242,7 +251,4 @@ class PyLiveLinkFace:
             live_link_face._blend_shapes = data
 
             return True, live_link_face
-        else:
-            #print("Data does not contain a face, returning default empty face.")
-            return False, PyLiveLinkFace()
 
