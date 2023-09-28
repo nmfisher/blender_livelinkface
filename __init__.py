@@ -43,6 +43,10 @@ def register():
         name = "Target object(s) to attach the LiveLink stream to",
     )
     bpy.types.Scene.ll_targets_index = bpy.props.IntProperty()
+    bpy.types.Scene.invert_lr_mouth = bpy.props.BoolProperty(
+        name="Invert Mouth L/R",
+        description="Invert MouthLeft-MouthRight blendshapes",
+        default = False)
 
 
 
