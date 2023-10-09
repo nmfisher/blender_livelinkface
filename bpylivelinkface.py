@@ -75,6 +75,14 @@ class LiveLinkTarget:
     '''
     def livelink_to_shapekey_idx(self, ll_idx):
         name = LIVE_LINK_FACE_HEADER[ll_idx+2]
+
+        # Invert Mouth Left and Rigth shapes to compensate for LiveLinkFace bug
+        if bpy.context.scene.invert_lr_mouth:
+            if name == 'MouthLeft':
+                name = 'MouthRight'
+            elif name == 'MouthRight':
+                name = 'MouthLeft'
+
         for n in [name, name[0].lower() + name[1:]]:
             idx = self.target.data.shape_keys.key_blocks.find(n)
             if idx != -1:
@@ -88,6 +96,14 @@ class LiveLinkTarget:
 
     def livelink_to_custom_prop(self, ll_idx):
         name = LIVE_LINK_FACE_HEADER[ll_idx+2]
+
+        # Invert Mouth Left and Rigth shapes to compensate for LiveLinkFace bug
+        if bpy.context.scene.invert_lr_mouth:
+            if name == 'MouthLeft':
+                name = 'MouthRight'
+            elif name == 'MouthRight':
+                name = 'MouthLeft'
+                
         for n in [name, name[0].lower() + name[1:]]:
             try:
                 self.target[n]
