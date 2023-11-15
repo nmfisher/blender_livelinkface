@@ -363,12 +363,6 @@ class LiveLinkFacePanel(bpy.types.Panel):
     bl_region_type = "UI"
     bl_options = {"HEADER_LAYOUT_EXPAND"}
 
-    invert_lr_mouth : BoolProperty(
-        name="Invert Mouth L/R",
-        description="Invert MouthLeft-MouthRight blendshapes",
-        default = False
-        )
-
     def draw(self, context):
         box = self.layout.box()
         box.label(text="Target")
@@ -391,8 +385,4 @@ class LiveLinkFacePanel(bpy.types.Panel):
         box = self.layout.box()
         load_csv = box.operator("scene.load_csv_operator")
         
-        box = self.layout.box()
-        box.label(text="Adjustments")
-        row = box.row()
-        box.prop(context.scene, "invert_lr_mouth", text="Invert Mouth L/R")
 

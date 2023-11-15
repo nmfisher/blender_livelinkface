@@ -1,3 +1,7 @@
+import sys
+
+sys.dont_write_bytecode = True
+
 bl_info = { 
 "author":"Nick Fisher <nick.fisher@avinium.com>",
 "name":"LiveLinkFace Add-On",
@@ -43,19 +47,21 @@ def register():
         name = "Target object(s) to attach the LiveLink stream to",
     )
     bpy.types.Scene.ll_targets_index = bpy.props.IntProperty()
-    bpy.types.Scene.invert_lr_mouth = bpy.props.BoolProperty(
-        name="Invert Mouth L/R",
-        description="Invert MouthLeft-MouthRight blendshapes",
-        default = False)
 
 
 
 
 def unregister():
     for c in classes:
-        bpy.utils.unregister_class(c)
-    del bpy.types.Scene.ll_targets
-    del bpy.types.Scene.ll_targets_index
+        try:
+            bpy.utils.unregister_class(c)
+        except (RuntimeError, ValueError):
+            pass  # Ignore unregistering errors for classes that weren't registered
+    if hasattr(bpy.types.Scene, 'll_targets'):
+        del bpy.types.Scene.ll_targets
+    if hasattr(bpy.types.Scene, 'll_targets_index'):
+        del bpy.types.Scene.ll_targets_index
         
-if __name__ == "main":
+if __name__ == "__main__":
+    unregister()
     register()        
