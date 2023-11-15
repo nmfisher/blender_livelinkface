@@ -5,8 +5,10 @@ import csv
 import random 
 
 from livelinkface.pylivelinkface import PyLiveLinkFace, FaceBlendShape
+from livelinkface.utils import case_independent_compare #!NEW
 
 LIVE_LINK_FACE_HEADER = "Timecode,BlendShapeCount,EyeBlinkLeft,EyeLookDownLeft,EyeLookInLeft,EyeLookOutLeft,EyeLookUpLeft,EyeSquintLeft,EyeWideLeft,EyeBlinkRight,EyeLookDownRight,EyeLookInRight,EyeLookOutRight,EyeLookUpRight,EyeSquintRight,EyeWideRight,JawForward,JawRight,JawLeft,JawOpen,MouthClose,MouthFunnel,MouthPucker,MouthRight,MouthLeft,MouthSmileLeft,MouthSmileRight,MouthFrownLeft,MouthFrownRight,MouthDimpleLeft,MouthDimpleRight,MouthStretchLeft,MouthStretchRight,MouthRollLower,MouthRollUpper,MouthShrugLower,MouthShrugUpper,MouthPressLeft,MouthPressRight,MouthLowerDownLeft,MouthLowerDownRight,MouthUpperUpLeft,MouthUpperUpRight,BrowDownLeft,BrowDownRight,BrowInnerUp,BrowOuterUpLeft,BrowOuterUpRight,CheekPuff,CheekSquintLeft,CheekSquintRight,NoseSneerLeft,NoseSneerRight,TongueOut,HeadYaw,HeadPitch,HeadRoll,LeftEyeYaw,LeftEyePitch,LeftEyeRoll,RightEyeYaw,RightEyePitch,RightEyeRoll".split(",")
+LIVE_LINK_FACE_HEADER_RESERVED = "Timecode,BlendShapeCount".split(",")#!NEW
 
 instance = None
 
@@ -25,6 +27,7 @@ Interface for looking up shape key/custom properties by name and setting their r
 '''
 class LiveLinkTarget:
 
+    csvdata = [] #!NEW
     '''
     Construct an instance to manipulate frames on a single target object (which is an object within the Blender context).
     If the number of frames is known ahead of time (i.e. you are not working with streaming), this can be passed here.
@@ -35,7 +38,6 @@ class LiveLinkTarget:
     def __init__(self, target, num_frames=0, action_name=None):
         
         self.target = target
-                
         # first, let's create a placeholder for all shape keys that exist on the target mesh
         # sk_frames is a list where each entry (itself a list) represents one frame
         # each frame will contain N values (where N is the number of shape keys in the target mesh)
@@ -74,19 +76,13 @@ class LiveLinkTarget:
     ARKit blendshape IDs are the integer index within LIVE_LINK_FACE_HEADER (offset to exclude the first two columns.
     '''
     def livelink_to_shapekey_idx(self, ll_idx):
-        name = LIVE_LINK_FACE_HEADER[ll_idx+2]
-
-        # Invert Mouth Left and Rigth shapes to compensate for LiveLinkFace bug
-        if bpy.context.scene.invert_lr_mouth:
-            if name == 'MouthLeft':
-                name = 'MouthRight'
-            elif name == 'MouthRight':
-                name = 'MouthLeft'
-
-        for n in [name, name[0].lower() + name[1:]]:
-            idx = self.target.data.shape_keys.key_blocks.find(n)
-            if idx != -1:
-                return idx
+        name = LiveLinkTarget.csvdata[0][ll_idx+2] #!NEW LIVE_LINK_FACE_HEADER[ll_idx+2]
+        # for n in [name, name[0].lower() + name[1:]]:#!NEW
+        #     idx = self.target.data.shape_keys.key_blocks.find(n)
+        #     if idx != -1:
+        #         return idx
+        idx = next((i for i, key in enumerate(self.target.data.shape_keys.key_blocks.keys()) if case_independent_compare(key, name)), -1) #!NEW
+        
         return idx
 
     '''
@@ -95,22 +91,17 @@ class LiveLinkTarget:
     '''
 
     def livelink_to_custom_prop(self, ll_idx):
-        name = LIVE_LINK_FACE_HEADER[ll_idx+2]
-
-        # Invert Mouth Left and Rigth shapes to compensate for LiveLinkFace bug
-        if bpy.context.scene.invert_lr_mouth:
-            if name == 'MouthLeft':
-                name = 'MouthRight'
-            elif name == 'MouthRight':
-                name = 'MouthLeft'
-                
-        for n in [name, name[0].lower() + name[1:]]:
-            try:
-                self.target[n]
-                return n
-            except:
-                pass
-        return None    
+        name = LiveLinkTarget.csvdata[0][ll_idx+2] #!NEW LIVE_LINK_FACE_HEADER[ll_idx+2]
+        # for n in [name, name[0].lower() + name[1:]]:#!NEW
+        #     try:
+        #         self.target[n]
+        #         return n
+        #     except:
+        #         pass
+        # return None  
+        n = next((key for key in self.target.keys() if case_independent_compare(key, name)), None)#!NEW
+        return n
+     
             
     '''Sets the value for the LiveLink blendshape at index [i_ll] to [val] for frame [frame] (note the underlying target may be a blendshape or a bone).'''
     def set_frame_value(self, i_ll, frame, val):
@@ -124,22 +115,22 @@ class LiveLinkTarget:
                 custom_prop_idx =self.custom_props.index(custom_prop)
                 self.custom_prop_frames[frame][custom_prop_idx] = val
             else:
-#                print(f"Failed to find custom property for ARkit blendshape id {i_ll}")
+                #print(f"Failed to find custom property for ARkit blendshape id {i_ll}")
                 pass
 
     '''Loads a CSV in LiveLinkFace format. First line is the header (Timecode,BlendshapeCount,etc,etc), every line thereafter is a single frame with comma-separated weights'''
     @staticmethod
     def from_csv(targets,path,action_name="LiveLinkAction",use_first_frame_as_zero=False):        
         with open(path,"r") as csv_file:
-            csvdata = list(csv.reader(csv_file))
+            LiveLinkTarget.csvdata = csvdata = list(csv.reader(csv_file))#!NEW
 
         num_frames = len(csvdata) - 1
 
         targets = [LiveLinkTarget(target, num_frames, action_name=action_name) for target in targets]
-        for idx,blendshape in enumerate(LIVE_LINK_FACE_HEADER):
-            if idx < 2:
+        for idx,blendshape in enumerate(csvdata[0]):#!NEW enumerate(LIVE_LINK_FACE_HEADER):
+            if blendshape.lower() in map(str.lower, LIVE_LINK_FACE_HEADER_RESERVED):#!NEW idx < 2:
                 continue
-            
+ 
             rest_weight = float(csvdata[1][idx])
                         
             for i in range(1, num_frames):
