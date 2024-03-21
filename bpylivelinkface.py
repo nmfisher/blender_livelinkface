@@ -1,3 +1,4 @@
+import traceback
 import time
 import socket 
 import bpy 
@@ -32,17 +33,19 @@ class LiveLinkTarget:
     The target should have at least one shape key or custom property with a name that corresponds to one of the entries in LIVE_LINK_FACE_HEADER.
     An exception will be raised if neither of these are present.
     '''
-    def __init__(self, target, num_frames=3600, action_name=None):
+    def __init__(self, target, num_frames=360, action_name=None):
         
         self.target = target
-                
-        # first, let's create a placeholder for all shape keys that exist on the target mesh
-        # sk_frames is a list where each entry (itself a list) represents one frame
-        # each frame will contain N values (where N is the number of shape keys in the target mesh)
+        self.frame_nums = list(range(num_frames)) 
+
+        # create an array-of-arrays to hold the (flattened) tuples of (frame_number,weight) for each shape key
+        # i.e. each inner array will look like:
+        # [ 0, v1, 1, v2, ..., N, vN ]
+        # where v1 and v2 refer to the shape key weights at frames 0 and 1 respectively, and there are N frames in total
         # (note this will also create keyframes for non-LiveLinkFace shape keys on the mesh)
         # I can't find a better way to check if an object has shapekeys, so just use try-except
         try:
-            self.sk_frames = [ [0] * len(self.target.data.shape_keys.key_blocks) for _ in range(num_frames) ] 
+            self.sk_frame_data =  [ [ i for co in zip(self.frame_nums, [0.0] * num_frames) for i in co ] for _ in range(len(self.target.data.shape_keys.key_blocks)) ]
         except:
             self.sk_frames = None
         # some ARKit blendshapes may drive bone rotations, rather than mesh-deforming shape keys
@@ -56,6 +59,8 @@ class LiveLinkTarget:
                 self.custom_props += [custom_prop]
                 print(f"Found custom property {custom_prop} for ARkit blendshape : {LIVE_LINK_FACE_HEADER[i+2]}")
                 
+        # if the user hasn't already explicitly created a custom property on the target for head rotation
+        # we automatically create it here
         for k in ["HeadPitch","HeadRoll","HeadYaw"]:
             if k not in self.custom_props:
                 self.target[k] = 0.0
@@ -63,12 +68,13 @@ class LiveLinkTarget:
                 self.custom_props += [ k ] 
                 
         print(f"Set custom_props to {self.custom_props}")
-        self.custom_prop_frames = [[0] * len(self.custom_props) for _ in range(num_frames)]
+        self.custom_prop_framedata = [ [ i for co in zip(self.frame_nums, [0.0] * num_frames) for i in co ] for _ in range(len(self.custom_props)) ]
                 
-        print(f"Created {len(self.custom_prop_frames)} frames for {len(self.custom_props)} custom properties")
         if action_name is not None:
             self.create_action(action_name, num_frames)
-            
+        
+        self.update_keyframes()
+
     '''
     Try and resolve an ARKit blendshape-id to a named shape key in the target object.
     ARKit blendshape IDs are the integer index within LIVE_LINK_FACE_HEADER (offset to exclude the first two columns.
@@ -93,7 +99,6 @@ class LiveLinkTarget:
     Try and resolve an ARKit blendshape-id to a custom property in the target object.
     ARKit blendshape IDs are the integer index within LIVE_LINK_FACE_HEADER (offset to exclude the first two columns.
     '''
-
     def livelink_to_custom_prop(self, ll_idx):
         name = LIVE_LINK_FACE_HEADER[ll_idx+2]
 
@@ -115,14 +120,14 @@ class LiveLinkTarget:
     '''Sets the value for the LiveLink blendshape at index [i_ll] to [val] for frame [frame] (note the underlying target may be a blendshape or a bone).'''
     def set_frame_value(self, i_ll, frame, val):
         i_sk = self.livelink_to_shapekey_idx(i_ll)
-        
+        frame_data_offset = (2*frame)+1 
         if i_sk != -1:
-            self.sk_frames[frame][i_sk] = val
+            self.sk_frame_data[i_sk][frame_data_offset] = val
         else:
             custom_prop = self.livelink_to_custom_prop(i_ll)
             if custom_prop is not None:
-                custom_prop_idx =self.custom_props.index(custom_prop)
-                self.custom_prop_frames[frame][custom_prop_idx] = val
+                custom_prop_idx = self.custom_props.index(custom_prop)
+                self.custom_prop_framedata[custom_prop_idx][frame_data_offset] = val
             else:
 #                print(f"Failed to find custom property for ARkit blendshape id {i_ll}")
                 pass
@@ -203,39 +208,44 @@ class LiveLinkTarget:
         # a bit slow to use bpy.context.object.data.shape_keys.keyframe_insert(datapath,frame=frame)
         # (where datapath is something like 'key_blocks["MouthOpen"].value') 
         # better to add a new fcurve for each shape key then set the points in one go        
-        frame_nums = list(range(len(self.sk_frames)))
 
         for i_sk,fc in enumerate(self.sk_fcurves):
-            frame_values = [self.sk_frames[i][i_sk] for i in frame_nums]
-            frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
-            fc.keyframe_points.foreach_set('co',frame_data)
+            fc.keyframe_points.foreach_set('co',self.sk_frame_data[i_sk])
             fc.update()
             
         for i_b,fc, in enumerate(self.custom_prop_fcurves):
-            frame_values = [self.custom_prop_frames[i][i_b] for i in frame_nums]
-            frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
-            fc.keyframe_points.foreach_set('co',frame_data)
+            fc.keyframe_points.foreach_set('co',self.custom_prop_framedata[i_b])
+            fc.update()
        
     def update_to_frame(self, frame=0):
         self.target.data.shape_keys.key_blocks.foreach_set("value", self.sk_frames[frame])        
         for i,custom_prop in enumerate(self.custom_props):
-            self.target[custom_prop] = self.custom_prop_frames[frame][i]
+            self.target[custom_prop] = self.custom_prop_framedata[i][(2*frame)+1]
         self.target.data.shape_keys.user.update()
 
 class LiveLinkFaceServer:
 
     def __init__(self, targets, record, host, udp_port):
         self.record = record
-        self.current_frame = 1 
+        self.start_frame = -1
         self.listening = False
         self.host = host
         self.port = udp_port
-        self.millis = int(round(time.time() * 1000))
         self.targets = [ LiveLinkTarget(x,num_frames=3600,action_name=f"LiveLinkFace") for x in targets ]
         
         bpy.app.timers.register(self.read_from_socket)
         self.create_socket()
         print(f"Ready to receive network stream on {self.host}:{self.port}")
+    
+    def isListening(self):
+        return self.listening
+
+    def listen(self):
+        self.listening = True
+        self.start_frame = -1
+
+    def stopListening(self):
+        self.listening = False;
 
     def create_socket(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -246,33 +256,36 @@ class LiveLinkFaceServer:
     def read_from_socket(self):
         if not self.listening:
             return
-        interval = 1/120
-        data = None
+        interval = 1 / 60
+        frame = None
         try:
-            try:
-                data, addr = self.sock.recvfrom(1024) 
-            except socket.error as e:
-                pass
-                #print(f"Socket error : {e}")
-            if data:
+            # continue reading from the socket until the buffer is drained
+            while True:
+                data, addr = self.sock.recvfrom(312) 
                 success, live_link_face = PyLiveLinkFace.decode(data)
                 if success:
+                    if self.start_frame == -1:
+                        self.start_frame = live_link_face._frames
+                    frame = live_link_face._frames - self.start_frame
                     for t in self.targets:
                         for i in range(len(FaceBlendShape)):
                             val = live_link_face.get_blendshape(FaceBlendShape(i))
-                            t.set_frame_value(i, self.current_frame, val)
-                        
-                        if self.record:
-                            t.update_keyframes()
-                        else:
-                            t.update_to_frame(frame=self.current_frame)
-
-                    if self.record:
-                        self.current_frame += 1
-                        bpy.context.scene.frame_current = self.current_frame 
+                            t.set_frame_value(i, frame, val)
+        except socket.error as e:
+            pass
         except Exception as e:
+            print(traceback.format_exc())
             print(e)
-            
+        if frame is not None:
+            if self.record:
+                bpy.context.scene.frame_current = frame 
+                for t in self.targets:
+                    if self.record:
+                        t.update_keyframes()
+                    else:
+                        t.update_to_frame(frame=frame)
+
+           
         return interval
     
     def close(self):
@@ -282,4 +295,5 @@ class LiveLinkFaceServer:
             print("Failed to unregister timer")
             pass
         self.sock.close()
+        self.start_frame = 0
        

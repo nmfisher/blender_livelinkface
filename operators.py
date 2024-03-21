@@ -48,7 +48,7 @@ class ConnectOperator(bpy.types.Operator):
     bl_label = "connectbutton"
 
     def execute(self, context):
-        if llf.instance is not None and llf.instance.listening:
+        if llf.instance is not None and llf.instance.isListening():
             try:
                 llf.instance.close()
                 llf.instance = None
@@ -61,10 +61,10 @@ class ConnectOperator(bpy.types.Operator):
             if checkPrereqs(context):
                 try:
                     llf.create_instance([t.obj for t in context.scene.ll_targets], context.scene.ll_record_stream, context.scene.ll_host_ip, context.scene.ll_host_port)
-                    llf.instance.listening = True
+                    llf.instance.listen()
                     self.report({"INFO"}, "Started")
                 except Exception as e:
-                    llf.instance.listening = False
+                    llf.instance.stopListening()
                     self.report({"ERROR"}, f"Error connecting : {e}")
                 return {'FINISHED'}
             return {"CANCELLED"}
@@ -389,7 +389,7 @@ class LiveLinkFacePanel(bpy.types.Panel):
         row = box.row()
 
         row.prop(context.scene, "ll_record_stream", text="Record?")
-        row.operator("scene.connect_operator", text="Disconnect" if llf.instance is not None and llf.instance.listening else "Connect")
+        row.operator("scene.connect_operator", text="Disconnect" if llf.instance is not None and llf.instance.isListening() else "Connect")
 
         box = self.layout.box()
         box.label(text="Import")

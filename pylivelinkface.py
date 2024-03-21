@@ -247,4 +247,5 @@ class PyLiveLinkFace:
             live_link_face._blend_shapes = data
 
             return True, live_link_face
+        return False, None
 
