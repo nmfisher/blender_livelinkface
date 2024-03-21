@@ -60,7 +60,7 @@ class ConnectOperator(bpy.types.Operator):
         else:
             if checkPrereqs(context):
                 try:
-                    llf.create_instance([t.obj for t in context.scene.ll_targets], context.scene.ll_host_ip, context.scene.ll_host_port)
+                    llf.create_instance([t.obj for t in context.scene.ll_targets], context.scene.ll_record_stream, context.scene.ll_host_ip, context.scene.ll_host_port)
                     llf.instance.listening = True
                     self.report({"INFO"}, "Started")
                 except Exception as e:
@@ -122,7 +122,7 @@ class CUSTOM_OT_actions(Operator):
                     item.name = context.object.name
                     item.obj = context.object
                     scn.ll_targets_index = len(scn.ll_targets)-1
-                    info = '"%s" added to list' % (item.name)
+                    info = '"%s" added to LiveLinkFace targets' % (item.name)
                     self.report({'INFO'}, info)
             else:
                 self.report({'INFO'}, "Nothing selected in the Viewport")
@@ -385,10 +385,14 @@ class LiveLinkFacePanel(bpy.types.Panel):
         box.label(text="Stream")
         row = box.row()
         row.prop(context.scene, "ll_host_ip") 
-        row.prop(context.scene, "ll_host_port")
+        row.prop(context.scene, "ll_host_port")      
+        row = box.row()
 
-        box.operator("scene.connect_operator", text="Disconnect" if llf.instance is not None and llf.instance.listening else "Connect")
+        row.prop(context.scene, "ll_record_stream", text="Record?")
+        row.operator("scene.connect_operator", text="Disconnect" if llf.instance is not None and llf.instance.listening else "Connect")
+
         box = self.layout.box()
+        box.label(text="Import")
         load_csv = box.operator("scene.load_csv_operator")
         
         box = self.layout.box()

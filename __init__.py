@@ -43,6 +43,13 @@ def register():
         name = "Target object(s) to attach the LiveLink stream to",
     )
     bpy.types.Scene.ll_targets_index = bpy.props.IntProperty()
+
+    bpy.types.Scene.ll_record_stream = bpy.props.BoolProperty(
+        name="Record",
+        description="When true, blendshapes will be saved as successive frames in the action",
+        default = False
+    )
+
     bpy.types.Scene.invert_lr_mouth = bpy.props.BoolProperty(
         name="Invert Mouth L/R",
         description="Invert MouthLeft-MouthRight blendshapes",

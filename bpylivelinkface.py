@@ -14,11 +14,11 @@ instance = None
 Create a listener (an instance of LiveLinkFaceServer) on the given IP/port. 
 Prefer using this method than constructing an instance directly as this will ensure that any pre-existing connections are closed
 '''
-def create_instance(targets, host= "0.0.0.0", port = 11111):
+def create_instance(targets, record=False, host= "0.0.0.0", port = 11111):
     global instance
     if instance is not None:
         instance.close()
-    instance = LiveLinkFaceServer(targets, host, port)
+    instance = LiveLinkFaceServer(targets, record, host, port)
 
 '''
 Interface for looking up shape key/custom properties by name and setting their respective weights on frames.
@@ -32,7 +32,7 @@ class LiveLinkTarget:
     The target should have at least one shape key or custom property with a name that corresponds to one of the entries in LIVE_LINK_FACE_HEADER.
     An exception will be raised if neither of these are present.
     '''
-    def __init__(self, target, num_frames=0, action_name=None):
+    def __init__(self, target, num_frames=3600, action_name=None):
         
         self.target = target
                 
@@ -156,23 +156,7 @@ class LiveLinkTarget:
         
         return targets
     
-    # this method actually sets the keyframe values via bpy
-    def update_keyframes(self):
-        # a bit slow to use bpy.context.object.data.shape_keys.keyframe_insert(datapath,frame=frame)
-        # (where datapath is 'key_blocks["MouthOpen"].value') 
-        # better to add a new fcurve for each shape key then set the points in one go        
-        frame_nums = list(range(len(self.sk_frames)))
-
-        for i_sk,fc in enumerate(self.sk_fcurves):
-            frame_values = [self.sk_frames[i][i_sk] for i in frame_nums]
-            frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
-            fc.keyframe_points.foreach_set('co',frame_data)
-            
-        for i_b,fc, in enumerate(self.custom_prop_fcurves):
-            frame_values = [self.custom_prop_frames[i][i_b] for i in frame_nums]
-            frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
-            fc.keyframe_points.foreach_set('co',frame_data)
-       
+      
     def create_action(self, action_name, num_frames):
     
         # create a new Action so we can directly create fcurves and set the keyframe points
@@ -201,7 +185,8 @@ class LiveLinkTarget:
             fc = self.sk_action.fcurves.find(datapath)
             if fc is None:
                 print(f"Creating fcurve for shape key {sk.path_from_id()}")
-                fc = self.sk_action.fcurves.new(datapath)                
+                fc = self.sk_action.fcurves.new(datapath)
+                fc.extrapolation="CONSTANT"                
                 fc.keyframe_points.add(count=num_frames)
             else:
                 print(f"Found fcurve for shape key {sk.path_from_id()}")
@@ -213,6 +198,23 @@ class LiveLinkTarget:
                 self.target.keyframe_insert(datapath,frame=i)
             self.custom_prop_fcurves += [fc for fc in self.target.animation_data.action.fcurves if fc.data_path == datapath]
     
+    # this method actually sets the keyframe values via bpy
+    def update_keyframes(self):
+        # a bit slow to use bpy.context.object.data.shape_keys.keyframe_insert(datapath,frame=frame)
+        # (where datapath is something like 'key_blocks["MouthOpen"].value') 
+        # better to add a new fcurve for each shape key then set the points in one go        
+        frame_nums = list(range(len(self.sk_frames)))
+
+        for i_sk,fc in enumerate(self.sk_fcurves):
+            frame_values = [self.sk_frames[i][i_sk] for i in frame_nums]
+            frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
+            fc.keyframe_points.foreach_set('co',frame_data)
+            fc.update()
+            
+        for i_b,fc, in enumerate(self.custom_prop_fcurves):
+            frame_values = [self.custom_prop_frames[i][i_b] for i in frame_nums]
+            frame_data = [x for co in zip(frame_nums, frame_values) for x in co]
+            fc.keyframe_points.foreach_set('co',frame_data)
        
     def update_to_frame(self, frame=0):
         self.target.data.shape_keys.key_blocks.foreach_set("value", self.sk_frames[frame])        
@@ -222,12 +224,14 @@ class LiveLinkTarget:
 
 class LiveLinkFaceServer:
 
-    def __init__(self, targets, host, udp_port):
+    def __init__(self, targets, record, host, udp_port):
+        self.record = record
+        self.current_frame = 1 
         self.listening = False
         self.host = host
         self.port = udp_port
         self.millis = int(round(time.time() * 1000))
-        self.targets = [ LiveLinkTarget(x,num_frames=1) for x in targets ]
+        self.targets = [ LiveLinkTarget(x,num_frames=3600,action_name=f"LiveLinkFace") for x in targets ]
         
         bpy.app.timers.register(self.read_from_socket)
         self.create_socket()
@@ -240,33 +244,32 @@ class LiveLinkFaceServer:
         self.sock.bind((self.host, self.port)) 
                                                 
     def read_from_socket(self):
-    
         if not self.listening:
             return
-        interval = 1/60
+        interval = 1/120
         data = None
         try:
-            current = int(round(time.time() * 1000))
-            self.millis = current
-            
-            while True:
-                try:
-                    data, addr = self.sock.recvfrom(1024) 
-                except socket.error as e:
-                    print(f"Socket error : {e}")
-                    break
-            if data is None:
-                print(f"Empty data, ignoring")
-                return interval
-            print(f"Got non-empty data of len {len(data)}")
-            success, live_link_face = PyLiveLinkFace.decode(data)
-            if success:
-                for t in self.targets:
-                    for i in range(len(FaceBlendShape)):
-                        val = live_link_face.get_blendshape(FaceBlendShape(i))
-                        t.set_frame_value(i, 0, val)
-                    t.update_to_frame(0)
+            try:
+                data, addr = self.sock.recvfrom(1024) 
+            except socket.error as e:
+                pass
+                #print(f"Socket error : {e}")
+            if data:
+                success, live_link_face = PyLiveLinkFace.decode(data)
+                if success:
+                    for t in self.targets:
+                        for i in range(len(FaceBlendShape)):
+                            val = live_link_face.get_blendshape(FaceBlendShape(i))
+                            t.set_frame_value(i, self.current_frame, val)
+                        
+                        if self.record:
+                            t.update_keyframes()
+                        else:
+                            t.update_to_frame(frame=self.current_frame)
 
+                    if self.record:
+                        self.current_frame += 1
+                        bpy.context.scene.frame_current = self.current_frame 
         except Exception as e:
             print(e)
             
@@ -276,6 +279,7 @@ class LiveLinkFaceServer:
         try:
             bpy.app.timers.unregister(self.handle_data)
         except:
+            print("Failed to unregister timer")
             pass
         self.sock.close()
        

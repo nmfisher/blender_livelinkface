@@ -226,8 +226,6 @@ class PyLiveLinkFace:
         frame_number, sub_frame = struct.unpack(
                 "!2i", bytes_data[name_end_pos:name_end_pos + 8])
         fps, denominator = struct.unpack("!2i", bytes_data[name_end_pos+8:name_end_pos+16])
-        if frame_number % 60 == 0:
-            print(f"data length {len(bytes_data)} device_id {device_id} name {name} frame_number {frame_number} fps{fps}")
 
         if len(bytes_data) > name_end_pos + 16:        
            
@@ -241,8 +239,6 @@ class PyLiveLinkFace:
 
             data = struct.unpack(
                 "!61f", bytes_data[name_end_pos + 17:])
-            if frame_number % 60 == 0:
-                print(data)
             live_link_face = PyLiveLinkFace(name, device_id, fps)
             live_link_face._version = version
             live_link_face._frames = frame_number
