@@ -6,8 +6,9 @@ bl_info = {
 "location": "View3D > Sidebar > LiveLinkFace"
 }
 
-import bpy
-from bpy_utils import register_custom_list_operator
+import os, sys, bpy
+sys.path.append(os.getcwd())
+from bpy_utils import register_custom_list_operators, unregister_custom_list_operators
 from livelinkface.operators import LiveLinkFacePanel, ConnectOperator, LoadCSVOperator
 
 def register():
@@ -39,7 +40,7 @@ def unregister():
     del bpy.types.Scene.ll_is_listening
     del bpy.types.Scene.ll_host_ip
     del bpy.types.Scene.ll_host_port
-    del bpy.types.Scene.lL_record_stream
+    del bpy.types.Scene.ll_record_stream
     del bpy.types.Scene.invert_lr_mouth
  
 if __name__ == "main":

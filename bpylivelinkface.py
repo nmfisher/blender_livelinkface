@@ -266,7 +266,10 @@ class LiveLinkFaceServer:
                 if success:
                     if self.start_frame == -1:
                         self.start_frame = live_link_face._frames
-                    frame = live_link_face._frames - self.start_frame
+                    if self.record:
+                        frame = live_link_face._frames - self.start_frame
+                    else:
+                        frame = 0
                     for t in self.targets:
                         for i in range(len(FaceBlendShape)):
                             val = live_link_face.get_blendshape(FaceBlendShape(i))
@@ -279,12 +282,10 @@ class LiveLinkFaceServer:
         if frame is not None:
             if self.record:
                 bpy.context.scene.frame_current = frame 
-                for t in self.targets:
-                    if self.record:
-                        t.update_keyframes()
-                    else:
-                        t.update_to_frame(frame=frame)
-
+            else:
+                bpy.context.scene.frame_current = 0 
+            for t in self.targets:
+                t.update_keyframes()
            
         return interval
     

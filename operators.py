@@ -92,8 +92,8 @@ class LiveLinkFacePanel(bpy.types.Panel):
         row = box.row()
         row.template_list("CUSTOM_UL_items", "", bpy.context.scene, "ll_targets", bpy.context.scene, "ll_index", rows=rows)
         col = row.column(align=True)
-        col.operator("ll.custom.list_action", icon='ADD', text="").action = 'ADD'
-        col.operator("ll.custom.list_action", icon='REMOVE', text="").action = 'REMOVE'
+        col.operator("ll_custom.list_action", icon='ADD', text="").action = 'ADD'
+        col.operator("ll_custom.list_action", icon='REMOVE', text="").action = 'REMOVE'
         
         box = self.layout.box()
         box.label(text="Stream")
