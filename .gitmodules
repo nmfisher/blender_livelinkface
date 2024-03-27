@@ -1,0 +1,3 @@
+[submodule "bpy_utils"]
+	path = bpy_utils
+	url = git@github.com:nmfisher/bpy_utils.git

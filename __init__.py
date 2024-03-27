@@ -7,42 +7,18 @@ bl_info = {
 }
 
 import bpy
+from bpy_utils import register_custom_list_operator
+from livelinkface.operators import LiveLinkFacePanel, ConnectOperator, LoadCSVOperator
 
-from livelinkface.operators import LiveLinkFacePanel, ConnectOperator, LoadCSVOperator, CUSTOM_OT_actions, CUSTOM_OT_addViewportSelection, CUSTOM_OT_printItems, CUSTOM_OT_clearList, CUSTOM_OT_removeDuplicates, CUSTOM_OT_selectItems, CUSTOM_OT_deleteObject, CUSTOM_UL_items
-
-class ObjectSlot(bpy.types.PropertyGroup):
-    obj: bpy.props.PointerProperty(name="Object",type=bpy.types.Object)
-
-
-classes = (
-    LiveLinkFacePanel, 
-    ConnectOperator, 
-    LoadCSVOperator, 
-    ObjectSlot,
-    CUSTOM_OT_actions,
-    CUSTOM_OT_addViewportSelection,
-    CUSTOM_OT_printItems,
-    CUSTOM_OT_clearList,
-    CUSTOM_OT_removeDuplicates,
-    CUSTOM_OT_selectItems,
-    CUSTOM_OT_deleteObject,
-    CUSTOM_UL_items,
-    
-)
-
-
-        
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    register_custom_list_operators("ll", "ll_targets", "ll_index")
+    bpy.utils.register_class(LiveLinkFacePanel)
+    bpy.utils.register_class(ConnectOperator)
+    bpy.utils.register_class(LoadCSVOperator)
+
     bpy.types.Scene.ll_is_listening = bpy.props.BoolProperty(name="Server listening", description="Whether the server is currently listening", default=False)
     bpy.types.Scene.ll_host_ip = bpy.props.StringProperty(name="Host IP", description="IP address of the interface on this machine to listen", default="0.0.0.0")
     bpy.types.Scene.ll_host_port = bpy.props.IntProperty(name="Port", description="Port", default=11111)
-    bpy.types.Scene.ll_targets = bpy.props.CollectionProperty(
-        type = ObjectSlot,
-        name = "Target object(s) to attach the LiveLink stream to",
-    )
-    bpy.types.Scene.ll_targets_index = bpy.props.IntProperty()
 
     bpy.types.Scene.ll_record_stream = bpy.props.BoolProperty(
         name="Record",
@@ -55,14 +31,16 @@ def register():
         description="Invert MouthLeft-MouthRight blendshapes",
         default = False)
 
-
-
-
 def unregister():
-    for c in classes:
-        bpy.utils.unregister_class(c)
-    del bpy.types.Scene.ll_targets
-    del bpy.types.Scene.ll_targets_index
-        
+    bpy.utils.unregister_class(LiveLinkFacePanel)
+    bpy.utils.unregister_class(ConnectOperator)
+    bpy.utils.unregister_class(LoadCSVOperator)
+    unregister_custom_list_operators("ll","ll_targets", "ll_index")
+    del bpy.types.Scene.ll_is_listening
+    del bpy.types.Scene.ll_host_ip
+    del bpy.types.Scene.ll_host_port
+    del bpy.types.Scene.lL_record_stream
+    del bpy.types.Scene.invert_lr_mouth
+ 
 if __name__ == "main":
     register()        
